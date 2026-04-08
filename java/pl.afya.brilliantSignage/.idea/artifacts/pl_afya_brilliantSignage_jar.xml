@@ -1,8 +1,0 @@
-<component name="ArtifactManager">
-  <artifact type="jar" name="pl.afya.brilliantSignage:jar">
-    <output-path>$PROJECT_DIR$/out/artifacts/pl_afya_brilliantSignage_jar</output-path>
-    <root id="archive" name="pl.afya.brilliantSignage.jar">
-      <element id="module-output" name="pl.afya.brilliantSignage" />
-    </root>
-  </artifact>
-</component>
