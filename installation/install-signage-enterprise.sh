@@ -108,20 +108,20 @@ Optional:
   --show-time=N                   Image display time in seconds (default: 15)
   --progress-h=N                  Progress bar height in px (default: 5)
   --progress-color=VALUE          Progress color (default: #000000)
-  --prevent-sleep=true|false      Enable prevent sleep (default: false)
+  --prevent-sleep=true|false|y|t|n  Enable prevent sleep (default: false)
 
 SMIL hub options:
   --smil-hub=URL                  SMIL hub URL, required when --mode=hub
   --smil-player-name=NAME         Optional SMIL player name
   --smil-uuid=UUID                Optional SMIL UUID override for current run
-                                  If not set, app uses/generates UUID automatically
+                                   If not set, app uses/generates UUID automatically
   --smil-refresh-seconds=N        Optional forced refresh interval
-  --smil-debug=true|false         Enable SMIL debug (default: false)
+  --smil-debug=true|false|y|t|n   Enable SMIL debug (default: false)
 
 Deployment options:
-  --kiosk=true|false              Enable kiosk desktop preparation (default: false)
-  --install-autostart=true|false  Create autostart desktop entry (default: true)
-  --force=true|false              Overwrite existing files (default: false)
+  --kiosk=true|false|y|t|n        Enable kiosk desktop preparation (default: false)
+  --install-autostart=true|false|y|t|n  Create autostart desktop entry (default: true)
+  --force=true|false|y|t|n        Overwrite existing files (default: false)
 
 Other:
   --help                          Show this help
@@ -141,10 +141,10 @@ EOF
 
 bool_normalize() {
     case "${1,,}" in
-        true|1|yes|y|on|t) echo "true" ;;
-        false|0|no|n|off|f) echo "false" ;;
+        true|y|t) echo "true" ;;
+        false|n) echo "false" ;;
         *)
-            echo "Invalid boolean value: $1" >&2
+            echo "Invalid boolean value: $1 (allowed: true|false|y|t|n)" >&2
             exit 1
             ;;
     esac
