@@ -9,10 +9,13 @@ import javax.swing.JPanel;
 import javax.swing.SwingConstants;
 import javax.swing.SwingUtilities;
 import java.awt.Color;
+import java.awt.Cursor;
 import java.awt.Font;
 import java.awt.GraphicsDevice;
 import java.awt.GraphicsEnvironment;
 import java.awt.Image;
+import java.awt.Point;
+import java.awt.Toolkit;
 import java.awt.image.BufferedImage;
 import java.io.BufferedReader;
 import java.io.IOException;
@@ -47,6 +50,8 @@ public class Player {
     private JLayeredPane layeredPane;
     private JLabel mediaLabel;
     private JPanel progressBar;
+    private Cursor hiddenCursor;
+    private Cursor defaultCursor;
 
     public Player(int screenIndex, int screenWidth, int screenHeight, String cacheDirectory, int rotateSeconds, boolean smilMode, int progressHeightPx, String progressColorHex) {
         this.screenIndex = screenIndex;
@@ -72,6 +77,7 @@ public class Player {
             while (true) {
                 List<PlaylistEntry> playlist = buildPlaylist();
                 if (playlist.isEmpty()) {
+                    setPlaybackCursorHidden(true);
                     showText("CACHE is empty\nAdd .jpg, .png, .mov or .mp4 files", Color.WHITE);
                     sleepMs(3000L);
                     continue;
@@ -81,9 +87,11 @@ public class Player {
                     Path mediaPath = item.path;
                     String ext = getFileExtension(mediaPath.getFileName().toString());
                     if ("jpg".equals(ext) || "jpeg".equals(ext) || "png".equals(ext)) {
+                        setPlaybackCursorHidden(true);
                         DisplayRect rect = showImage(mediaPath);
                         sleepWithImageProgress(item.durationMs, rect);
                     } else {
+                        setPlaybackCursorHidden(true);
                         // Swing does not provide native video playback; keep playlist order and timing.
                         showText("Video: " + mediaPath.getFileName(), Color.LIGHT_GRAY);
                         hideProgressBar();
@@ -132,6 +140,9 @@ public class Player {
             progressBar.setBackground(progressColor);
             progressBar.setVisible(false);
 
+            defaultCursor = Cursor.getDefaultCursor();
+            hiddenCursor = createHiddenCursor();
+
             mediaLabel.setBounds(0, 0, screenWidth, screenHeight);
             layeredPane.add(mediaLabel, Integer.valueOf(0));
             layeredPane.add(progressBar, Integer.valueOf(1));
@@ -140,6 +151,7 @@ public class Player {
             frame.setSize(screenWidth, screenHeight);
             selectedDevice.setFullScreenWindow(frame);
             frame.setVisible(true);
+            setPlaybackCursorHidden(true);
         });
     }
 
@@ -214,6 +226,7 @@ public class Player {
         try {
             BufferedImage source = ImageIO.read(imagePath.toFile());
             if (source == null) {
+                setPlaybackCursorHidden(true);
                 showText("Cannot load image: " + imagePath.getFileName(), Color.RED);
                 hideProgressBar();
                 return null;
@@ -239,10 +252,38 @@ public class Player {
             });
             return new DisplayRect(targetX, targetY, targetWidth, targetHeight);
         } catch (IOException e) {
+            setPlaybackCursorHidden(true);
             showText("Cannot load image: " + imagePath.getFileName(), Color.RED);
             hideProgressBar();
             return null;
         }
+    }
+
+    private Cursor createHiddenCursor() {
+        Toolkit toolkit = Toolkit.getDefaultToolkit();
+        BufferedImage cursorImage = new BufferedImage(16, 16, BufferedImage.TYPE_INT_ARGB);
+        return toolkit.createCustomCursor(cursorImage, new Point(0, 0), "hidden-cursor");
+    }
+
+    private void setPlaybackCursorHidden(boolean hidden) {
+        SwingUtilities.invokeLater(() -> {
+            if (frame == null) {
+                return;
+            }
+
+            Cursor cursorToApply = hidden ? hiddenCursor : defaultCursor;
+            if (cursorToApply == null) {
+                cursorToApply = Cursor.getDefaultCursor();
+            }
+
+            frame.setCursor(cursorToApply);
+            if (layeredPane != null) {
+                layeredPane.setCursor(cursorToApply);
+            }
+            if (mediaLabel != null) {
+                mediaLabel.setCursor(cursorToApply);
+            }
+        });
     }
 
     private void showText(String text, Color color) {

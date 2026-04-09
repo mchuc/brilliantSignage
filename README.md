@@ -39,10 +39,15 @@ java -jar brilliantSignage.jar --help
 - `--rotate-time=<seconds>` (alias, deprecated)
 - `--progress-h=<px>`
 - `--progress-color=<#RRBBGG|#RRBBGGAA>`
+- `--prevent-sleep[=on|off|true|false|1|0]`
 - `--smil-hub=<http(s)://host[:port]>`
 - `--smil-player-name=<name>`
 - `--smil-debug[=true|false|1|0|yes|on]`
 - `--smil-refresh-seconds=<seconds>`
+
+`--prevent-sleep` keeps both display and system awake while app is running.
+Current backends: Windows and Linux (`systemd-inhibit`, Wayland fallback `gnome-session-inhibit`/`dbus-send`, X11 fallback `xset` rescue).
+No anti-sleep background worker is started unless `--prevent-sleep` is enabled.
 
 ## Mode 1: Static CACHE Playback
 

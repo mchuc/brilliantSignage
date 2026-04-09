@@ -1,6 +1,8 @@
 import interfaces.ISettings;
 import common.Player;
 import common.Settings;
+import common.SleepBlocker;
+import common.SleepBlockerFactory;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -33,6 +35,7 @@ public class main {
         int progressHeightPx = 5;
         String progressColorHex = "#000000";
         boolean smilModeEnabled = false;
+        boolean preventSleep = false;
 
         //start information
         System.out.println("***********");
@@ -128,6 +131,13 @@ public class main {
                     progressColorHex = value;
                 }
             }
+            if ("--prevent-sleep".equals(args[i])) {
+                preventSleep = true;
+            }
+            if (args[i].startsWith("--prevent-sleep=")) {
+                String value = args[i].substring("--prevent-sleep=".length()).trim();
+                preventSleep = parseBooleanArg(value);
+            }
         }
 
         if (smilHub != null && !smilDebugExplicit) {
@@ -138,6 +148,7 @@ public class main {
         System.out.println("Rotate time: " + rotateTimeSeconds + "s");
         System.out.println("Progress bar height: " + progressHeightPx + "px");
         System.out.println("Progress bar color: " + progressColorHex);
+        System.out.println("Prevent sleep: " + (preventSleep ? "enabled" : "disabled"));
 
         if (smilHub == null) {
             cleanupSmilPlaylistManifest(Settings.getDirectory());
@@ -179,6 +190,16 @@ public class main {
             }
         }
 
+        if (preventSleep) {
+            SleepBlocker sleepBlocker = SleepBlockerFactory.createForCurrentOs();
+            if (sleepBlocker.start()) {
+                System.out.println("Prevent sleep enabled (display + system), backend: " + sleepBlocker.getBackendName());
+                Runtime.getRuntime().addShutdownHook(new Thread(sleepBlocker::stop, "sleep-blocker-shutdown"));
+            } else {
+                System.out.println("Prevent sleep requested but unavailable on this system.");
+            }
+        }
+
         Player player = new Player(
                 Settings.getScreenCurrent(),
                 Settings.getScreenWidth(),
@@ -213,6 +234,10 @@ public class main {
         System.out.println("      Image progress bar color (default: #000000).\n"
                 + "      Supports 6/8-hex plus short forms (3/4).\n"
                 + "      Channel order: RRBBGG[AA].");
+        System.out.println("  --prevent-sleep[=on|off|true|false|1|0]");
+        System.out.println("      Prevent display sleep and system sleep while app is running.\n"
+                + "      Supported backends: Windows and Linux (systemd-inhibit, Wayland fallback gnome-session-inhibit/dbus-send, X11 fallback xset rescue).\n"
+                + "      No anti-sleep background worker starts unless prevent-sleep is enabled.");
         System.out.println("  --smil-hub=<http(s)://host[:port]>");
         System.out.println("      Enable SMIL sync from hub (/smil-index).");
         System.out.println("  --smil-player-name=<name>");
@@ -233,5 +258,13 @@ public class main {
         } catch (IOException ignored) {
             // Cleanup is best-effort only.
         }
+    }
+
+    private static boolean parseBooleanArg(String value) {
+        String normalized = value.trim().toLowerCase();
+        return "1".equals(normalized)
+                || "true".equals(normalized)
+                || "yes".equals(normalized)
+                || "on".equals(normalized);
     }
 }
