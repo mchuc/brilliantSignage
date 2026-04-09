@@ -78,7 +78,7 @@ public class Player {
                 List<PlaylistEntry> playlist = buildPlaylist();
                 if (playlist.isEmpty()) {
                     setPlaybackCursorHidden(true);
-                    showText("CACHE is empty\nAdd .jpg, .png, .mov or .mp4 files", Color.WHITE);
+                    showText("CACHE is empty\nAdd .jpg, .png, .mov or .mp4 files\n\n" + AppInfo.APP_SIGNATURE, Color.WHITE);
                     sleepMs(3000L);
                     continue;
                 }

@@ -195,6 +195,7 @@ public class Settings implements ISettings {
         String signageAgent = buildSignageAgent(playerIdentity, playerUuid);
         URI smilIndex = withPlayerQuery(origin.resolve("/smil-index"), playerIdentity, playerUuid);
         Path cacheDirectory = Paths.get(this.directorySelected);
+        System.out.println("Connecting");
 
         logSmilDebug("Connecting to hub: " + origin);
         logSmilDebug("Player identity: " + playerIdentity);
@@ -204,9 +205,12 @@ public class Settings implements ISettings {
 
         try {
             Set<URI> mediaUris = collectMediaUrisFromSmil(smilIndex, origin, signageAgent, playerIdentity, playerUuid);
+            System.out.println("Connected");
+            System.out.println("Copying/Hashing");
             logSmilDebug("SMIL processing complete, media entries found: " + mediaUris.size());
             int downloaded = downloadMediaFiles(mediaUris, cacheDirectory, signageAgent, playerIdentity, playerUuid);
             writeSmilPlaylistManifest(cacheDirectory, lastSmilDurationsByFile);
+            System.out.println("System Ready");
             logSmilDebug("Sync complete, files copied/updated in cache: " + downloaded);
             return "Player " + playerIdentity + ": downloaded " + downloaded + " file(s) from " + origin;
         } catch (IOException e) {
@@ -826,7 +830,8 @@ public class Settings implements ISettings {
 
     private String fetchPublicIp(String providerUrl) {
         try {
-            HttpURLConnection connection = (HttpURLConnection) new URL(providerUrl).openConnection();
+            URL url = URI.create(providerUrl).toURL();
+            HttpURLConnection connection = (HttpURLConnection) url.openConnection();
             connection.setConnectTimeout(3000);
             connection.setReadTimeout(3000);
             connection.setRequestMethod("GET");
@@ -841,7 +846,7 @@ public class Settings implements ISettings {
                     return out.toString(StandardCharsets.UTF_8).trim();
                 }
             }
-        } catch (IOException ignored) {
+        } catch (IOException | IllegalArgumentException ignored) {
             return null;
         }
         return null;

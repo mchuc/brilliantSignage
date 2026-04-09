@@ -1,4 +1,5 @@
 import interfaces.ISettings;
+import common.AppInfo;
 import common.Player;
 import common.Settings;
 import common.SleepBlocker;
@@ -40,7 +41,11 @@ public class main {
 
         //start information
         System.out.println("***********");
-        System.out.println("pl.afya.brilliantSignage");
+        System.out.println(AppInfo.APP_NAME);
+        System.out.println("Version: " + AppInfo.APP_VERSION);
+        System.out.println(AppInfo.APP_COPYRIGHT);
+        System.out.println(AppInfo.APP_ORCID);
+        System.out.println("Email: " + AppInfo.APP_EMAIL);
         System.out.println("***********");
         System.out.println("Starting...");
         System.out.println("Detecting screens...");
@@ -233,11 +238,21 @@ public class main {
                 progressHeightPx,
                 progressColorHex
         );
+        if (smilModeEnabled) {
+            System.out.println("Start Player");
+        }
         player.start();
     }
 
     private static void printHelp() {
-        System.out.println("pl.afya.brilliantSignage - options:");
+        System.out.println("***********");
+        System.out.println(AppInfo.APP_NAME);
+        System.out.println("Version: " + AppInfo.APP_VERSION);
+        System.out.println(AppInfo.APP_COPYRIGHT);
+        System.out.println(AppInfo.APP_ORCID);
+        System.out.println("Email: " + AppInfo.APP_EMAIL);
+        System.out.println("***********");
+        System.out.println(AppInfo.APP_NAME + " - options:");
         System.out.println("  --help, -h");
         System.out.println("      Show this help and exit.");
         System.out.println("  --screen=<index>");
