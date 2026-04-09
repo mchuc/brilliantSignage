@@ -14,6 +14,8 @@ public interface ISettings {
     String getDirectory();
     void setSMILDebug(boolean enabled);
     void setSMILPlayerName(String playerName);
+    void setSMILUuidOverride(String playerUuid);
+    String resetSMILUuid();
     int getSMILRecommendedRefreshSeconds();
     String setSMILHost(String host);
 

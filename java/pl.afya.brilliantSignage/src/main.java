@@ -28,8 +28,9 @@ public class main {
 
         String smilHub = null;
         String smilPlayerName = null;
+        String smilUuidOverride = null;
         boolean smilDebug = false;
-        boolean smilDebugExplicit = false;
+        boolean smilResetUuid = false;
         int smilRefreshSeconds = -1;
         int rotateTimeSeconds = 15;
         int progressHeightPx = 5;
@@ -82,15 +83,22 @@ public class main {
                     smilPlayerName = value;
                 }
             }
+            if (args[i].startsWith("--smil-uuid=")) {
+                String value = args[i].substring("--smil-uuid=".length()).trim();
+                if (!value.isEmpty()) {
+                    smilUuidOverride = value;
+                }
+            }
+            if ("--smil-reset-uuid".equals(args[i])) {
+                smilResetUuid = true;
+            }
             //smil debug logs
             if ("--smil-debug".equals(args[i])) {
                 smilDebug = true;
-                smilDebugExplicit = true;
             }
             if (args[i].startsWith("--smil-debug=")) {
                 String value = args[i].substring("--smil-debug=".length()).trim().toLowerCase();
                 smilDebug = "1".equals(value) || "true".equals(value) || "yes".equals(value) || "on".equals(value);
-                smilDebugExplicit = true;
             }
             if (args[i].startsWith("--smil-refresh-seconds=")) {
                 String value = args[i].substring("--smil-refresh-seconds=".length()).trim();
@@ -140,9 +148,24 @@ public class main {
             }
         }
 
-        if (smilHub != null && !smilDebugExplicit) {
-            smilDebug = true;
+
+        if (smilResetUuid) {
+            try {
+                String resetUuid = Settings.resetSMILUuid();
+                System.out.println("SMIL UUID reset in config.json: " + resetUuid);
+            } catch (IllegalStateException e) {
+                System.out.println("Failed to reset SMIL UUID: " + e.getMessage());
+            }
         }
+        if (smilUuidOverride != null) {
+            try {
+                Settings.setSMILUuidOverride(smilUuidOverride);
+                System.out.println("SMIL UUID override: " + smilUuidOverride);
+            } catch (IllegalArgumentException e) {
+                System.out.println("Invalid --smil-uuid value: " + smilUuidOverride);
+            }
+        }
+
         System.out.println("Selecting screen " + Settings.getScreenCurrent() + "...");
         System.out.println("Working directory: " + Settings.getDirectory());
         System.out.println("Rotate time: " + rotateTimeSeconds + "s");
@@ -242,7 +265,12 @@ public class main {
         System.out.println("      Enable SMIL sync from hub (/smil-index).");
         System.out.println("  --smil-player-name=<name>");
         System.out.println("      Override default player name (default: brilliantSignage-<IP>).\n"
-                + "      Used in Signage-Agent NAME and in query parameter player=.");
+                + "      Used in Signage-Agent NAME and in query parameter player=.\n"
+                + "      Player UUID is persistent in <working-directory>/config.json.");
+        System.out.println("  --smil-uuid=<uuid>");
+        System.out.println("      Override SMIL UUID only for current run (does not modify config.json).");
+        System.out.println("  --smil-reset-uuid");
+        System.out.println("      Service option. Generate and persist a new UUID in <working-directory>/config.json.");
         System.out.println("  --smil-debug[=true,false,1,0,yes,on]");
         System.out.println("      Enable/disable SMIL debug output.");
         System.out.println("  --smil-refresh-seconds=<seconds>");

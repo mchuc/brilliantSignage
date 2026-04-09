@@ -42,6 +42,8 @@ java -jar brilliantSignage.jar --help
 - `--prevent-sleep[=on|off|true|false|1|0]`
 - `--smil-hub=<http(s)://host[:port]>`
 - `--smil-player-name=<name>`
+- `--smil-uuid=<uuid>`
+- `--smil-reset-uuid`
 - `--smil-debug[=true|false|1|0|yes|on]`
 - `--smil-refresh-seconds=<seconds>`
 
@@ -94,6 +96,19 @@ Override player identity name:
 ```zsh
 java -jar brilliantSignage.jar --smil-hub="http://host:port" --smil-player-name="MyPlayer-01"
 ```
+
+SMIL instance UUID is persistent and is stored in working directory:
+- default working directory: `~/brilliantSignage/config.json` (`playerUuid`)
+- custom working directory (`--directory=/path/to/workdir`): `/path/to/workdir/config.json`
+
+`config.json` stores also machine fingerprint. If this config is copied to another computer,
+player detects mismatch and auto-generates a new UUID, so each machine is registered as separate device.
+
+`--smil-player-name` changes display name only; UUID stays stable unless config is deleted.
+
+Service options:
+- `--smil-uuid=<uuid>`: override UUID only for current run (runtime only)
+- `--smil-reset-uuid`: generate and persist a new UUID in `config.json`
 
 ## SMIL Refresh Interval
 

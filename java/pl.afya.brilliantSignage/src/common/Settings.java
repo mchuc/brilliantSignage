@@ -21,6 +21,8 @@ import java.net.SocketException;
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.net.URL;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -46,6 +48,9 @@ import java.util.LinkedHashMap;
 
 public class Settings implements ISettings {
 
+    private static final String APP_DIRECTORY_NAME = "brilliantSignage";
+    private static final String CONFIG_FILE_NAME = "config.json";
+
     private int screenSelected = -1;// -1 means no screen selected
     private Screen[] screens; // list of avaible screens
     private String directorySelected = null;
@@ -53,6 +58,8 @@ public class Settings implements ISettings {
     private String smilIndexEtag = null;
     private Set<URI> lastSmilMediaUris = new LinkedHashSet<>();
     private String smilPlayerNameOverride = null;
+    private String smilPlayerUuid = null;
+    private String smilPlayerUuidOverride = null;
     private int smilRecommendedRefreshSeconds = 60;
     private Map<String, Long> lastSmilDurationsByFile = new LinkedHashMap<>();
 
@@ -146,6 +153,36 @@ public class Settings implements ISettings {
     }
 
     @Override
+    public void setSMILUuidOverride(String playerUuid) {
+        if (playerUuid == null || playerUuid.trim().isEmpty()) {
+            this.smilPlayerUuidOverride = null;
+            return;
+        }
+
+        String normalized = playerUuid.trim();
+        try {
+            this.smilPlayerUuidOverride = UUID.fromString(normalized).toString();
+        } catch (IllegalArgumentException e) {
+            throw new IllegalArgumentException("Invalid UUID format for --smil-uuid", e);
+        }
+    }
+
+    @Override
+    public String resetSMILUuid() {
+        String generatedUuid = UUID.randomUUID().toString();
+        String machineFingerprint = buildMachineFingerprint();
+        Path configPath = getConfigPath();
+        try {
+            Files.createDirectories(configPath.getParent());
+            writeConfigWithUuid(configPath, generatedUuid, machineFingerprint);
+        } catch (IOException e) {
+            throw new IllegalStateException("Failed to reset SMIL UUID in config.json", e);
+        }
+        this.smilPlayerUuid = generatedUuid;
+        return generatedUuid;
+    }
+
+    @Override
     public int getSMILRecommendedRefreshSeconds() {
         return this.smilRecommendedRefreshSeconds;
     }
@@ -154,19 +191,21 @@ public class Settings implements ISettings {
     public String setSMILHost(String host) {
         URI origin = validateHost(host);
         String playerIdentity = buildPlayerIdentity();
-        String signageAgent = buildSignageAgent(playerIdentity);
-        URI smilIndex = withPlayerQuery(origin.resolve("/smil-index"), playerIdentity);
+        String playerUuid = getEffectivePlayerUuid();
+        String signageAgent = buildSignageAgent(playerIdentity, playerUuid);
+        URI smilIndex = withPlayerQuery(origin.resolve("/smil-index"), playerIdentity, playerUuid);
         Path cacheDirectory = Paths.get(this.directorySelected);
 
         logSmilDebug("Connecting to hub: " + origin);
         logSmilDebug("Player identity: " + playerIdentity);
+        logSmilDebug("Player UUID: " + playerUuid);
         logSmilDebug("Signage-Agent: " + signageAgent);
         logSmilDebug("Fetching SMIL index: " + smilIndex);
 
         try {
-            Set<URI> mediaUris = collectMediaUrisFromSmil(smilIndex, origin, signageAgent, playerIdentity);
+            Set<URI> mediaUris = collectMediaUrisFromSmil(smilIndex, origin, signageAgent, playerIdentity, playerUuid);
             logSmilDebug("SMIL processing complete, media entries found: " + mediaUris.size());
-            int downloaded = downloadMediaFiles(mediaUris, cacheDirectory, signageAgent, playerIdentity);
+            int downloaded = downloadMediaFiles(mediaUris, cacheDirectory, signageAgent, playerIdentity, playerUuid);
             writeSmilPlaylistManifest(cacheDirectory, lastSmilDurationsByFile);
             logSmilDebug("Sync complete, files copied/updated in cache: " + downloaded);
             return "Player " + playerIdentity + ": downloaded " + downloaded + " file(s) from " + origin;
@@ -201,7 +240,7 @@ public class Settings implements ISettings {
         }
     }
 
-    private Set<URI> collectMediaUrisFromSmil(URI startUri, URI allowedOrigin, String signageAgent, String playerIdentity) throws IOException {
+    private Set<URI> collectMediaUrisFromSmil(URI startUri, URI allowedOrigin, String signageAgent, String playerIdentity, String playerUuid) throws IOException {
         Set<URI> mediaUris = new LinkedHashSet<>();
         Map<String, Long> durationsByFile = new LinkedHashMap<>();
         Set<URI> visitedXml = new HashSet<>();
@@ -221,7 +260,7 @@ public class Settings implements ISettings {
             byte[] xmlContent;
             try {
                 if (firstDocument) {
-                    xmlContent = httpGetSmilIndexBytes(current, signageAgent, playerIdentity);
+                        xmlContent = httpGetSmilIndexBytes(current, signageAgent, playerIdentity, playerUuid);
                     if (xmlContent == null) {
                         if (lastSmilMediaUris.isEmpty()) {
                             throw new IOException("SMIL index not modified (304), but no cached playlist exists yet");
@@ -230,7 +269,7 @@ public class Settings implements ISettings {
                         return new LinkedHashSet<>(lastSmilMediaUris);
                     }
                 } else {
-                    xmlContent = httpGetBytes(current, signageAgent, playerIdentity);
+                        xmlContent = httpGetBytes(current, signageAgent, playerIdentity, playerUuid);
                 }
             } catch (IOException e) {
                 logSmilDebug("Failed to download SMIL/XML document: " + current + " -> " + e.getMessage());
@@ -423,7 +462,7 @@ public class Settings implements ISettings {
         return path.endsWith(".jpg") || path.endsWith(".jpeg") || path.endsWith(".png") || path.endsWith(".mp4") || path.endsWith(".mov");
     }
 
-    private int downloadMediaFiles(Set<URI> mediaUris, Path cacheDirectory, String signageAgent, String playerIdentity) throws IOException {
+    private int downloadMediaFiles(Set<URI> mediaUris, Path cacheDirectory, String signageAgent, String playerIdentity, String playerUuid) throws IOException {
         if (Files.notExists(cacheDirectory)) {
             Files.createDirectories(cacheDirectory);
         }
@@ -440,12 +479,12 @@ public class Settings implements ISettings {
             logSmilDebug("Preparing media file: " + mediaUri + " -> " + target.getFileName());
             writeCacheSyncLog(cacheDirectory, "ATTEMPT", mediaUri, fileName, "Preparing download");
 
-            URI mediaUriWithPlayer = withPlayerQuery(mediaUri, playerIdentity);
+            URI mediaUriWithPlayer = withPlayerQuery(mediaUri, playerIdentity, playerUuid);
             Path tempFile = Files.createTempFile(cacheDirectory, "smil-sync-", ".tmp");
             try {
                 try {
                     logSmilDebug("Downloading media: " + mediaUriWithPlayer);
-                    httpDownloadToFile(mediaUriWithPlayer, tempFile, signageAgent);
+                    httpDownloadToFile(mediaUriWithPlayer, tempFile, signageAgent, playerUuid);
                     if (replaceIfDifferent(tempFile, target)) {
                         updated++;
                         logSmilDebug("Copied to cache: " + target.getFileName());
@@ -506,9 +545,9 @@ public class Settings implements ISettings {
         return raw.replaceAll("[^a-zA-Z0-9._-]", "_");
     }
 
-    private byte[] httpGetBytes(URI uri, String signageAgent, String playerIdentity) throws IOException {
-        URI uriWithPlayer = withPlayerQuery(uri, playerIdentity);
-        HttpURLConnection connection = openHttpConnection(uriWithPlayer, signageAgent);
+    private byte[] httpGetBytes(URI uri, String signageAgent, String playerIdentity, String playerUuid) throws IOException {
+        URI uriWithPlayer = withPlayerQuery(uri, playerIdentity, playerUuid);
+        HttpURLConnection connection = openHttpConnection(uriWithPlayer, signageAgent, playerUuid);
         int code = connection.getResponseCode();
         logSmilDebug("HTTP GET " + uriWithPlayer + " -> " + code);
         if (code < 200 || code >= 300) {
@@ -525,9 +564,9 @@ public class Settings implements ISettings {
         }
     }
 
-    private byte[] httpGetSmilIndexBytes(URI uri, String signageAgent, String playerIdentity) throws IOException {
-        URI uriWithPlayer = withPlayerQuery(uri, playerIdentity);
-        HttpURLConnection connection = openHttpConnection(uriWithPlayer, signageAgent);
+    private byte[] httpGetSmilIndexBytes(URI uri, String signageAgent, String playerIdentity, String playerUuid) throws IOException {
+        URI uriWithPlayer = withPlayerQuery(uri, playerIdentity, playerUuid);
+        HttpURLConnection connection = openHttpConnection(uriWithPlayer, signageAgent, playerUuid);
         if (smilIndexEtag != null && !smilIndexEtag.isEmpty()) {
             connection.setRequestProperty("If-None-Match", smilIndexEtag);
             logSmilDebug("If-None-Match: " + smilIndexEtag);
@@ -558,8 +597,8 @@ public class Settings implements ISettings {
         }
     }
 
-    private void httpDownloadToFile(URI uri, Path targetFile, String signageAgent) throws IOException {
-        HttpURLConnection connection = openHttpConnection(uri, signageAgent);
+    private void httpDownloadToFile(URI uri, Path targetFile, String signageAgent, String playerUuid) throws IOException {
+        HttpURLConnection connection = openHttpConnection(uri, signageAgent, playerUuid);
         int code = connection.getResponseCode();
         logSmilDebug("HTTP GET " + uri + " -> " + code);
         if (code < 200 || code >= 300) {
@@ -571,7 +610,7 @@ public class Settings implements ISettings {
         }
     }
 
-    private HttpURLConnection openHttpConnection(URI uri, String signageAgent) throws IOException {
+    private HttpURLConnection openHttpConnection(URI uri, String signageAgent, String playerUuid) throws IOException {
         URL url = uri.toURL();
         HttpURLConnection connection = (HttpURLConnection) url.openConnection();
         connection.setInstanceFollowRedirects(true);
@@ -581,20 +620,28 @@ public class Settings implements ISettings {
         connection.setRequestProperty("Accept", "*/*");
         connection.setRequestProperty("User-Agent", signageAgent);
         connection.setRequestProperty("X-Signage-Agent", signageAgent);
+        connection.setRequestProperty("X-Signage-UUID", playerUuid);
         return connection;
     }
 
-    private URI withPlayerQuery(URI uri, String playerIdentity) {
+    private URI withPlayerQuery(URI uri, String playerIdentity, String playerUuid) {
         try {
             String encodedPlayer = URLEncoder.encode(playerIdentity, StandardCharsets.UTF_8);
+            String encodedUuid = URLEncoder.encode(playerUuid, StandardCharsets.UTF_8);
             String query = uri.getQuery();
-            String nextQuery = (query == null || query.isEmpty())
-                    ? "player=" + encodedPlayer
-                    : query + "&player=" + encodedPlayer;
+            String nextQuery = appendQueryParam(query, "player", encodedPlayer);
+            nextQuery = appendQueryParam(nextQuery, "playerUuid", encodedUuid);
             return new URI(uri.getScheme(), uri.getAuthority(), uri.getPath(), nextQuery, uri.getFragment());
         } catch (URISyntaxException e) {
             throw new IllegalArgumentException("Cannot build player query for URI: " + uri, e);
         }
+    }
+
+    private String appendQueryParam(String existingQuery, String key, String encodedValue) {
+        if (existingQuery == null || existingQuery.isEmpty()) {
+            return key + "=" + encodedValue;
+        }
+        return existingQuery + "&" + key + "=" + encodedValue;
     }
 
     private String buildPlayerIdentity() {
@@ -604,9 +651,155 @@ public class Settings implements ISettings {
         return "brilliantSignage-" + resolveExternalIp();
     }
 
-    private String buildSignageAgent(String playerIdentity) {
-        String uuid = UUID.nameUUIDFromBytes(playerIdentity.getBytes(StandardCharsets.UTF_8)).toString();
-        return "GAPI/1.0 (UUID:" + uuid + "; NAME:" + playerIdentity + ") brilliantSignage-java/v0.1 (MODEL:Garlic)";
+    private String buildSignageAgent(String playerIdentity, String playerUuid) {
+        return "GAPI/1.0 (UUID:" + playerUuid + "; NAME:" + playerIdentity + ") brilliantSignage-java/v0.1 (MODEL:Garlic)";
+    }
+
+    private String loadOrCreatePlayerUuid() {
+        Path configPath = getConfigPath();
+        Path appDirectory = configPath.getParent();
+        String machineFingerprint = buildMachineFingerprint();
+
+        try {
+            Files.createDirectories(appDirectory);
+            if (Files.exists(configPath) && Files.isRegularFile(configPath)) {
+                String existingJson = new String(Files.readAllBytes(configPath), StandardCharsets.UTF_8);
+                String existingUuid = extractUuidFromConfig(existingJson);
+                String existingFingerprint = extractConfigString(existingJson, "machineFingerprint");
+                if (existingUuid != null && machineFingerprint.equals(existingFingerprint)) {
+                    return existingUuid;
+                }
+            }
+
+            String generatedUuid = UUID.randomUUID().toString();
+            writeConfigWithUuid(configPath, generatedUuid, machineFingerprint);
+            return generatedUuid;
+        } catch (IOException e) {
+            // If config cannot be persisted, still provide a valid runtime identity.
+            return UUID.randomUUID().toString();
+        }
+    }
+
+    private String getEffectivePlayerUuid() {
+        if (smilPlayerUuidOverride != null && !smilPlayerUuidOverride.isEmpty()) {
+            return smilPlayerUuidOverride;
+        }
+        if (smilPlayerUuid == null || smilPlayerUuid.isEmpty()) {
+            smilPlayerUuid = loadOrCreatePlayerUuid();
+        }
+        return smilPlayerUuid;
+    }
+
+    private Path getConfigPath() {
+        return getWorkingDirectoryPath().resolve(CONFIG_FILE_NAME);
+    }
+
+    private Path getWorkingDirectoryPath() {
+        if (directorySelected != null && !directorySelected.trim().isEmpty()) {
+            Path cachePath = Paths.get(directorySelected).normalize();
+            Path parent = cachePath.getParent();
+            if (parent != null) {
+                return parent;
+            }
+            return cachePath;
+        }
+        return Paths.get(System.getProperty("user.home"), APP_DIRECTORY_NAME);
+    }
+
+    private String extractUuidFromConfig(String json) {
+        String candidate = extractConfigString(json, "playerUuid");
+        if (candidate == null) {
+            return null;
+        }
+        try {
+            return UUID.fromString(candidate).toString();
+        } catch (IllegalArgumentException e) {
+            return null;
+        }
+    }
+
+    private String extractConfigString(String json, String fieldName) {
+        if (json == null || json.trim().isEmpty()) {
+            return null;
+        }
+        Pattern valuePattern = Pattern.compile("\"" + Pattern.quote(fieldName) + "\"\\s*:\\s*\"([^\"]+)\"");
+        Matcher matcher = valuePattern.matcher(json);
+        if (!matcher.find()) {
+            return null;
+        }
+        return matcher.group(1).trim();
+    }
+
+    private void writeConfigWithUuid(Path configPath, String uuid, String machineFingerprint) throws IOException {
+        String json = "{\n"
+                + "  \"playerUuid\": \"" + uuid + "\",\n"
+                + "  \"machineFingerprint\": \"" + machineFingerprint + "\"\n"
+                + "}\n";
+        Path temp = Files.createTempFile(configPath.getParent(), "config-", ".tmp");
+        try {
+            Files.write(temp, json.getBytes(StandardCharsets.UTF_8), StandardOpenOption.TRUNCATE_EXISTING, StandardOpenOption.WRITE);
+            moveReplacing(temp, configPath);
+        } finally {
+            Files.deleteIfExists(temp);
+        }
+    }
+
+    private String buildMachineFingerprint() {
+        String host = "unknown-host";
+        try {
+            host = InetAddress.getLocalHost().getHostName();
+        } catch (Exception ignored) {
+            // Best-effort only.
+        }
+
+        String mac = resolveFirstMacAddress();
+        String raw = System.getProperty("os.name", "unknown-os")
+                + "|" + System.getProperty("os.arch", "unknown-arch")
+                + "|" + host
+                + "|" + mac;
+        return sha256Hex(raw);
+    }
+
+    private String resolveFirstMacAddress() {
+        try {
+            Enumeration<NetworkInterface> interfaces = NetworkInterface.getNetworkInterfaces();
+            while (interfaces.hasMoreElements()) {
+                NetworkInterface ni = interfaces.nextElement();
+                if (!ni.isUp() || ni.isLoopback() || ni.isVirtual()) {
+                    continue;
+                }
+                byte[] mac = ni.getHardwareAddress();
+                if (mac == null || mac.length == 0) {
+                    continue;
+                }
+
+                StringBuilder sb = new StringBuilder();
+                for (byte b : mac) {
+                    if (sb.length() > 0) {
+                        sb.append(':');
+                    }
+                    sb.append(String.format("%02x", b));
+                }
+                return sb.toString();
+            }
+        } catch (SocketException ignored) {
+            // Best-effort only.
+        }
+        return "unknown-mac";
+    }
+
+    private String sha256Hex(String value) {
+        try {
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            byte[] bytes = digest.digest(value.getBytes(StandardCharsets.UTF_8));
+            StringBuilder sb = new StringBuilder();
+            for (byte b : bytes) {
+                sb.append(String.format("%02x", b));
+            }
+            return sb.toString();
+        } catch (NoSuchAlgorithmException e) {
+            return Integer.toHexString(value.hashCode());
+        }
     }
 
     private String resolveExternalIp() {
